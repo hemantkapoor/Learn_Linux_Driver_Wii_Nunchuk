@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/i2c.h>
 #include <linux/input-polldev.h>
+#include <asm/delay.h>
 
 struct nunchuk_dev {
 struct input_polled_dev *polled_input;
@@ -9,6 +10,35 @@ struct i2c_client *i2c_client;
 };
 
 
+/****************************************************************************************/
+/*																						*/
+/*																						*/
+/*							Read Nunchuk Register										*/
+/*																						*/
+/****************************************************************************************/
+void read_nunchuk_register(char *buffy,struct i2c_client *client)
+{
+	int error;
+	/*Put 10 ms delay*/
+	udelay(10000);
+	error =  i2c_master_send(client,0x00, 1);
+	if(error != 1)
+	{
+		dev_err(&client->dev, "Failed to send data. \n");
+		return -EIO;
+	}
+	/*Put 10 ms delay*/
+	udelay(10000);
+	error = i2c_master_recv(client,buffy, int 6);	
+}
+
+
+/****************************************************************************************/
+/*																						*/
+/*																						*/
+/*							Input FreameWork Polling Function							*/
+/*																						*/
+/****************************************************************************************/
 void nunchuk_button_polling(struct input_polled_dev *dev)
 {
 /* The way to do this is simple */
@@ -20,6 +50,13 @@ nunchuk = dev->private;
 
 }
 
+
+/****************************************************************************************/
+/*																						*/
+/*																						*/
+/*							DeviceDriver Polling Function								*/
+/*																						*/
+/****************************************************************************************/
 static int nunchuck_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 /* initialize device */
@@ -40,6 +77,10 @@ struct input_dev *input;
 
 int error;
 
+char init_buffer[] = { 0xF0, 0x55, 0xFB, 0x00 };
+
+
+pr_info("Wazzup people, Probe method called \n");
 
 /* I think the first input is only for logging purpose */
 nunchuk = devm_kzalloc(&client->dev, sizeof(struct nunchuk_dev), GFP_KERNEL);
@@ -70,6 +111,8 @@ nunchuk->polled_input = polled_input;
 
 /* What the hell is this*/
 /* Header says: private: private driver data */
+/* This is kind of a mapping so that the input framework has information of what the overall thing is all about... */
+/* This information is used when creating polling function (nunchuk_button_polling) */
 polled_input->private = nunchuk;
 
 /* What is this */
@@ -109,19 +152,47 @@ if(error)
 	goto err_free_nunchuck_p_dev;
 }
 
+/* The nunchuck needs to be initialised */
+/* This is how you do it */
+/* Mnual at http://web.engr.oregonstate.edu/~sullivae/ece375/pdf/nunchuk.pdf */
+
+/* First send 0xF0 and 0x55 to initialize first register */
+error =  i2c_master_send(nunchuk->i2c_client,init_buffer, 2);
+
+if(error != 2)
+{
+    dev_err(&client->dev, "Failed to send first initialization command. \n");
+    goto err_free_nunchuck_p_dev;
+}
+
+/*Wait for 1 Millisecond */
+udelay(1000);
+
+/* Then send 0xFB and 0x00 to initialize second register */
+error =  i2c_master_send(nunchuk->i2c_client,&init_buffer[2], 2);
+
+if(error != 2)
+{
+    dev_err(&client->dev, "Failed to send second initialization command. \n");
+    goto err_free_nunchuck_p_dev;
+}
+
+
 
 
 return 0;
 
 err_free_nunchuck_p_dev: 
 input_free_polled_device(polled_input);
-
-
-pr_info("Wazzup people, Probe method called \n");
-return 0;
+return -1;
 }
 
-
+/****************************************************************************************/
+/*																						*/
+/*																						*/
+/*							DeviceDriver Remove Function								*/
+/*																						*/
+/****************************************************************************************/
 static int nunchuck_remove(struct i2c_client *client)
 {
 /*<private data> = i2c_get_clientdata(client);*/
@@ -143,6 +214,13 @@ pr_info("Wazzup people, Remove method called \n");
 return 0;
 }
 
+
+/****************************************************************************************/
+/*																						*/
+/*																						*/
+/*							Device Id Mapping Table										*/
+/*																						*/
+/****************************************************************************************/
 static const struct i2c_device_id nunchuck_id[] = {
 	{ "nunchuck", 0 },
 	{ }
@@ -150,6 +228,13 @@ static const struct i2c_device_id nunchuck_id[] = {
 
 MODULE_DEVICE_TABLE(i2c, nunchuck_id);
 
+
+/****************************************************************************************/
+/*																						*/
+/*																						*/
+/*							I2C DeviceDriver Structure Populated						*/
+/*																						*/
+/****************************************************************************************/
 static struct i2c_driver nunchuck_driver = {
          .driver         = {
                  .name   = "nunchuck",
