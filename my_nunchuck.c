@@ -2,7 +2,7 @@
 #include <linux/module.h>
 #include <linux/i2c.h>
 #include <linux/input-polldev.h>
-#include <asm/delay.h>
+#include <linux/delay.h>
 
 struct nunchuk_dev {
 struct input_polled_dev *polled_input;
@@ -16,11 +16,11 @@ struct i2c_client *i2c_client;
 /*							Read Nunchuk Register										*/
 /*																						*/
 /****************************************************************************************/
-void read_nunchuk_register(char *buffy,struct i2c_client *client)
+int read_nunchuk_register(char *buffy,struct i2c_client *client)
 {
 	int error;
 	/*Put 10 ms delay*/
-	udelay(10000);
+	mdelay(10);
 	error =  i2c_master_send(client,0x00, 1);
 	if(error != 1)
 	{
@@ -28,8 +28,9 @@ void read_nunchuk_register(char *buffy,struct i2c_client *client)
 		return -EIO;
 	}
 	/*Put 10 ms delay*/
-	udelay(10000);
-	error = i2c_master_recv(client,buffy, int 6);	
+	mdelay(10);
+	error = i2c_master_recv(client,buffy, 6);	
+	return 0;
 }
 
 
@@ -78,6 +79,8 @@ struct input_dev *input;
 int error;
 
 char init_buffer[] = { 0xF0, 0x55, 0xFB, 0x00 };
+
+char buffy[6];
 
 
 pr_info("Wazzup people, Probe method called \n");
@@ -177,8 +180,24 @@ if(error != 2)
     goto err_free_nunchuck_p_dev;
 }
 
+/* Called twice as Nunchuk updates its register once you have read it. */
+read_nunchuk_register(buffy,nunchuk->i2c_client);
 
+read_nunchuk_register(buffy,nunchuk->i2c_client);
 
+ /* Now can do stuff with buffy */
+ /* Lets just output the status of Z button which is bit 0 of Byte 5 */
+ /* If the value is 0 then the button is pressed else the button is released */
+ /* if(!bit(buffy[5],0)) */
+ if(!(buffy[5] & 0x01))
+  {
+	pr_info("Button Z pressed \n");
+ }
+ else
+ {
+	pr_info("Button Z released \n");
+ }
+ 
 
 return 0;
 
